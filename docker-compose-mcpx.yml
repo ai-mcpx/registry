@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   mcpx:
     image: craftslab/mcpx:latest
@@ -13,7 +15,10 @@ services:
       - MCP_REGISTRY_GITHUB_CLIENT_SECRET=${MCP_REGISTRY_GITHUB_CLIENT_SECRET}
     ports:
       - 8080:8080
-    restart: "unless-stopped"
+    networks:
+      - mcpx-network
+    restart: unless-stopped
+
   mongodb:
     image: mongo
     container_name: mongodb
@@ -21,7 +26,26 @@ services:
       - PUID=1000
       - PGID=1000
     volumes:
-      - './.db:/data/db'
+      - ./.db:/data/db
     ports:
       - 27017:27017
-    restart: "unless-stopped"
+    networks:
+      - mcpx-network
+    restart: unless-stopped
+
+  mcpx-ui:
+    image: craftslab/mcpx-ui:latest
+    container_name: mcpx-ui
+    depends_on:
+      - mcpx
+    ports:
+      - 5173:5173
+    environment:
+      - NODE_ENV=production
+    networks:
+      - mcpx-network
+    restart: unless-stopped
+
+networks:
+  mcpx-network:
+    driver: bridge
