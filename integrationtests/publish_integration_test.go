@@ -228,11 +228,16 @@ func TestPublishIntegration(t *testing.T) {
 		assert.Contains(t, recorder.Body.String(), "Version is required")
 	})
 
-	t.Run("publish fails with missing authorization header", func(t *testing.T) {
+	t.Run("publish succeeds without authorization header", func(t *testing.T) {
 		serverDetail := &model.ServerDetail{
 			Server: model.Server{
 				Name:        "test-server",
 				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/example/test-server",
+					Source: "github",
+					ID:     "example/test-server",
+				},
 				VersionDetail: model.VersionDetail{
 					Version: "1.0.0",
 				},
@@ -244,13 +249,43 @@ func TestPublishIntegration(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/v0/publish", bytes.NewBuffer(jsonData))
 		req.Header.Set("Content-Type", "application/json")
-		// No Authorization header
+		// No Authorization header - should succeed since auth is optional
+
+		recorder := httptest.NewRecorder()
+		handler(recorder, req)
+
+		assert.Equal(t, http.StatusCreated, recorder.Code)
+		assert.Contains(t, recorder.Body.String(), "Server publication successful")
+	})
+
+	t.Run("publish fails with github namespace without authorization", func(t *testing.T) {
+		serverDetail := &model.ServerDetail{
+			Server: model.Server{
+				Name:        "io.github.user/test-server", // GitHub namespace requires auth
+				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/user/test-server",
+					Source: "github",
+					ID:     "user/test-server",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+			},
+		}
+
+		jsonData, err := json.Marshal(serverDetail)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/v0/publish", bytes.NewBuffer(jsonData))
+		req.Header.Set("Content-Type", "application/json")
+		// No Authorization header for GitHub namespace
 
 		recorder := httptest.NewRecorder()
 		handler(recorder, req)
 
 		assert.Equal(t, http.StatusUnauthorized, recorder.Code)
-		assert.Contains(t, recorder.Body.String(), "Authorization header is required")
+		assert.Contains(t, recorder.Body.String(), "Authentication is required for this server namespace")
 	})
 
 	t.Run("publish fails with invalid JSON", func(t *testing.T) {

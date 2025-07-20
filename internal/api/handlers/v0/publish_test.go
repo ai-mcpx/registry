@@ -197,7 +197,7 @@ func TestPublishHandler(t *testing.T) {
 			expectedError:  "Version is required",
 		},
 		{
-			name:   "missing authorization header",
+			name:   "publish without authorization (optional auth)",
 			method: http.MethodPost,
 			requestBody: model.ServerDetail{
 				Server: model.Server{
@@ -211,18 +211,20 @@ func TestPublishHandler(t *testing.T) {
 					},
 				},
 			},
-			authHeader:     "", // Missing auth header
-			setupMocks:     func(_ *MockRegistryService, _ *MockAuthService) {},
-			expectedStatus: http.StatusUnauthorized,
-			expectedError:  "Authorization header is required",
+			authHeader: "", // No auth header provided
+			setupMocks: func(registry *MockRegistryService, _ *MockAuthService) {
+				registry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(nil)
+			},
+			expectedStatus: http.StatusCreated,
+			expectedError:  "",
 		},
 		{
-			name:   "authentication required error",
+			name:   "github authentication required error",
 			method: http.MethodPost,
 			requestBody: model.ServerDetail{
 				Server: model.Server{
 					ID:          "test-id",
-					Name:        "test-server",
+					Name:        "io.github.user/test-server", // GitHub prefix requires auth
 					Description: "A test server",
 					VersionDetail: model.VersionDetail{
 						Version:     "1.0.0",
@@ -236,7 +238,7 @@ func TestPublishHandler(t *testing.T) {
 				authSvc.Mock.On("ValidateAuth", mock.Anything, mock.Anything).Return(false, auth.ErrAuthRequired)
 			},
 			expectedStatus: http.StatusUnauthorized,
-			expectedError:  "Authentication is required for publishing",
+			expectedError:  "Authentication is required for this server namespace",
 		},
 		{
 			name:   "authentication failed",

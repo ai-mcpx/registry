@@ -60,17 +60,16 @@ func PublishHandler(registry service.RegistryService, authService auth.Service) 
 			return
 		}
 
-		// Get auth token from Authorization header
+		// Get auth token from Authorization header (optional)
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header is required", http.StatusUnauthorized)
-			return
-		}
+		var token string
 
 		// Handle bearer token format (e.g., "Bearer xyz123")
-		token := authHeader
-		if len(authHeader) > 7 && strings.ToUpper(authHeader[:7]) == "BEARER " {
-			token = authHeader[7:]
+		if authHeader != "" {
+			token = authHeader
+			if len(authHeader) > 7 && strings.ToUpper(authHeader[:7]) == "BEARER " {
+				token = authHeader[7:]
+			}
 		}
 
 		// Determine authentication method based on server name prefix
@@ -93,19 +92,40 @@ func PublishHandler(registry service.RegistryService, authService auth.Service) 
 			RepoRef: serverName,
 		}
 
-		valid, err := authService.ValidateAuth(r.Context(), a)
-		if err != nil {
-			if errors.Is(err, auth.ErrAuthRequired) {
-				http.Error(w, "Authentication is required for publishing", http.StatusUnauthorized)
+		// Only validate auth if auth method requires it or token is provided
+		if authMethod != model.AuthMethodNone {
+			// For GitHub namespace, token is required
+			if token == "" {
+				http.Error(w, "Authentication is required for this server namespace", http.StatusUnauthorized)
 				return
 			}
-			http.Error(w, "Authentication failed: "+err.Error(), http.StatusUnauthorized)
-			return
-		}
 
-		if !valid {
-			http.Error(w, "Invalid authentication credentials", http.StatusUnauthorized)
-			return
+			valid, err := authService.ValidateAuth(r.Context(), a)
+			if err != nil {
+				if errors.Is(err, auth.ErrAuthRequired) {
+					http.Error(w, "Authentication is required for this server namespace", http.StatusUnauthorized)
+					return
+				}
+				http.Error(w, "Authentication failed: "+err.Error(), http.StatusUnauthorized)
+				return
+			}
+
+			if !valid {
+				http.Error(w, "Invalid authentication credentials", http.StatusUnauthorized)
+				return
+			}
+		} else if token != "" {
+			// If a token is provided but auth method is None, validate it anyway
+			valid, err := authService.ValidateAuth(r.Context(), a)
+			if err != nil {
+				http.Error(w, "Authentication failed: "+err.Error(), http.StatusUnauthorized)
+				return
+			}
+
+			if !valid {
+				http.Error(w, "Invalid authentication credentials", http.StatusUnauthorized)
+				return
+			}
 		}
 
 		// Call the publish method on the registry service
