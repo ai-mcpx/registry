@@ -1,9 +1,10 @@
-package v0_test
+package integrationtests_test
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,557 +14,46 @@ import (
 	"github.com/modelcontextprotocol/registry/internal/model"
 	"github.com/modelcontextprotocol/registry/internal/service"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-// MockRegistryService is a mock implementation of the RegistryService interface
-type MockRegistryService struct {
-	mock.Mock
-}
-
-func (m *MockRegistryService) List(cursor string, limit int) ([]model.Server, string, error) {
-	args := m.Mock.Called(cursor, limit)
-	return args.Get(0).([]model.Server), args.String(1), args.Error(2)
-}
-
-func (m *MockRegistryService) GetByID(id string) (*model.ServerDetail, error) {
-	args := m.Mock.Called(id)
-	return args.Get(0).(*model.ServerDetail), args.Error(1)
-}
-
-func (m *MockRegistryService) Publish(serverDetail *model.ServerDetail) error {
-	args := m.Mock.Called(serverDetail)
-	return args.Error(0)
-}
-
-// MockAuthService is a mock implementation of the auth.Service interface
-type MockAuthService struct {
-	mock.Mock
-}
+// MockAuthService implements a simple auth service for testing
+type MockAuthService struct{}
 
 func (m *MockAuthService) StartAuthFlow(
-	ctx context.Context, method model.AuthMethod, repoRef string,
+	_ context.Context, _ model.AuthMethod, _ string,
 ) (map[string]string, string, error) {
-	args := m.Mock.Called(ctx, method, repoRef)
-	return args.Get(0).(map[string]string), args.String(1), args.Error(2)
+	return map[string]string{
+		"device_code":      "mock_device_code",
+		"user_code":        "ABCD-1234",
+		"verification_uri": "https://github.com/login/device",
+	}, "mock_status_token", nil
 }
 
-func (m *MockAuthService) CheckAuthStatus(ctx context.Context, statusToken string) (string, error) {
-	args := m.Mock.Called(ctx, statusToken)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAuthService) ValidateAuth(ctx context.Context, authentication model.Authentication) (bool, error) {
-	args := m.Mock.Called(ctx, authentication)
-	return args.Bool(0), args.Error(1)
-}
-
-func TestPublishHandler(t *testing.T) {
-	testCases := []struct {
-		name             string
-		method           string
-		requestBody      any
-		authHeader       string
-		setupMocks       func(*MockRegistryService, *MockAuthService)
-		expectedStatus   int
-		expectedResponse map[string]string
-		expectedError    string
-	}{
-		{
-			name:   "successful publish with GitHub auth",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        "io.github.example/test-server",
-					Description: "A test server",
-					Repository: model.Repository{
-						URL:    "https://github.com/example/test-server",
-						Source: "github",
-						ID:     "example/test-server",
-					},
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader: "Bearer github_token_123",
-			setupMocks: func(registry *MockRegistryService, authSvc *MockAuthService) {
-				authSvc.Mock.On("ValidateAuth", mock.Anything, model.Authentication{
-					Method:  model.AuthMethodGitHub,
-					Token:   "github_token_123",
-					RepoRef: "io.github.example/test-server",
-				}).Return(true, nil)
-				registry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(nil)
-			},
-			expectedStatus: http.StatusCreated,
-			expectedResponse: map[string]string{
-				"message": "Server publication successful",
-				"id":      "test-id",
-			},
-		},
-		{
-			name:   "successful publish with no auth (AuthMethodNone)",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id-2",
-					Name:        "example/test-server",
-					Description: "A test server without auth",
-					Repository: model.Repository{
-						URL:    "https://example.com/test-server",
-						Source: "example",
-						ID:     "example/test-server",
-					},
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader: "Bearer some_token",
-			setupMocks: func(registry *MockRegistryService, authSvc *MockAuthService) {
-				authSvc.Mock.On("ValidateAuth", mock.Anything, model.Authentication{
-					Method:  model.AuthMethodNone,
-					Token:   "some_token",
-					RepoRef: "example/test-server",
-				}).Return(true, nil)
-				registry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(nil)
-			},
-			expectedStatus: http.StatusCreated,
-			expectedResponse: map[string]string{
-				"message": "Server publication successful",
-				"id":      "test-id-2",
-			},
-		},
-		{
-			name:           "method not allowed",
-			method:         http.MethodGet,
-			requestBody:    nil,
-			authHeader:     "",
-			setupMocks:     func(_ *MockRegistryService, _ *MockAuthService) {},
-			expectedStatus: http.StatusMethodNotAllowed,
-			expectedError:  "Method not allowed",
-		},
-		{
-			name:           "missing request body",
-			method:         http.MethodPost,
-			requestBody:    "",
-			authHeader:     "",
-			setupMocks:     func(_ *MockRegistryService, _ *MockAuthService) {},
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "Invalid request payload:",
-		},
-		{
-			name:   "missing server name",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        "", // Missing name
-					Description: "A test server",
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader:     "",
-			setupMocks:     func(_ *MockRegistryService, _ *MockAuthService) {},
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "Name is required",
-		},
-		{
-			name:   "missing version",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        "test-server",
-					Description: "A test server",
-					VersionDetail: model.VersionDetail{
-						Version:     "", // Missing version
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader:     "",
-			setupMocks:     func(_ *MockRegistryService, _ *MockAuthService) {},
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "Version is required",
-		},
-		{
-			name:   "publish without authorization (optional auth)",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        "test-server",
-					Description: "A test server",
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader: "", // No auth header provided
-			setupMocks: func(registry *MockRegistryService, _ *MockAuthService) {
-				registry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(nil)
-			},
-			expectedStatus: http.StatusCreated,
-			expectedError:  "",
-		},
-		{
-			name:   "github authentication required error",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        "io.github.user/test-server", // GitHub prefix requires auth
-					Description: "A test server",
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader: "Bearer token",
-			setupMocks: func(_ *MockRegistryService, authSvc *MockAuthService) {
-				authSvc.Mock.On("ValidateAuth", mock.Anything, mock.Anything).Return(false, auth.ErrAuthRequired)
-			},
-			expectedStatus: http.StatusUnauthorized,
-			expectedError:  "Authentication is required for this server namespace",
-		},
-		{
-			name:   "authentication failed",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        "test-server",
-					Description: "A test server",
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader: "Bearer invalid_token",
-			setupMocks: func(_ *MockRegistryService, authSvc *MockAuthService) {
-				authSvc.Mock.On("ValidateAuth", mock.Anything, mock.Anything).Return(false, nil)
-			},
-			expectedStatus: http.StatusUnauthorized,
-			expectedError:  "Invalid authentication credentials",
-		},
-		{
-			name:   "registry service error",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        "test-server",
-					Description: "A test server",
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader: "Bearer token",
-			setupMocks: func(registry *MockRegistryService, authSvc *MockAuthService) {
-				authSvc.Mock.On("ValidateAuth", mock.Anything, mock.Anything).Return(true, nil)
-				registry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(assert.AnError)
-			},
-			expectedStatus: http.StatusInternalServerError,
-			expectedError:  "Failed to publish server details:",
-		},
-		{
-			name:   "HTML injection attack in name field",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id-html",
-					Name:        "io.github.malicious/<script>alert('XSS')</script>test-server",
-					Description: "A test server with HTML injection attempt",
-					Repository: model.Repository{
-						URL:    "https://github.com/malicious/test-server",
-						Source: "github",
-						ID:     "malicious/test-server",
-					},
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader: "Bearer github_token_123",
-			setupMocks: func(registry *MockRegistryService, authSvc *MockAuthService) {
-				// The auth service should receive the escaped HTML version of the name
-				authSvc.Mock.On("ValidateAuth", mock.Anything, mock.MatchedBy(func(auth model.Authentication) bool {
-					// Verify that the RepoRef contains escaped HTML, not the raw script tag
-					return auth.Method == model.AuthMethodGitHub &&
-						auth.Token == "github_token_123" &&
-						auth.RepoRef == "io.github.malicious/&lt;script&gt;alert(&#39;XSS&#39;)&lt;/script&gt;test-server"
-				})).Return(true, nil)
-				registry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(nil)
-			},
-			expectedStatus: http.StatusCreated,
-			expectedResponse: map[string]string{
-				"message": "Server publication successful",
-				"id":      "test-id-html",
-			},
-		},
-		{
-			name:   "HTML injection attack in name field with non-GitHub prefix",
-			method: http.MethodPost,
-			requestBody: model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id-html-non-github",
-					Name:        "malicious.com/<script>alert('XSS')</script>test-server",
-					Description: "A test server with HTML injection attempt (non-GitHub)",
-					Repository: model.Repository{
-						URL:    "https://malicious.com/test-server",
-						Source: "custom",
-						ID:     "malicious/test-server",
-					},
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			},
-			authHeader: "Bearer some_token",
-			setupMocks: func(registry *MockRegistryService, authSvc *MockAuthService) {
-				// The auth service should receive the escaped HTML version of the name with AuthMethodNone
-				authSvc.Mock.On("ValidateAuth", mock.Anything, mock.MatchedBy(func(auth model.Authentication) bool {
-					// Verify that the RepoRef contains escaped HTML, not the raw script tag
-					return auth.Method == model.AuthMethodNone &&
-						auth.Token == "some_token" &&
-						auth.RepoRef == "malicious.com/&lt;script&gt;alert(&#39;XSS&#39;)&lt;/script&gt;test-server"
-				})).Return(true, nil)
-				registry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(nil)
-			},
-			expectedStatus: http.StatusCreated,
-			expectedResponse: map[string]string{
-				"message": "Server publication successful",
-				"id":      "test-id-html-non-github",
-			},
-		},
+func (m *MockAuthService) CheckAuthStatus(_ context.Context, statusToken string) (string, error) {
+	if statusToken == "mock_status_token" {
+		return "mock_access_token", nil
 	}
+	return "", fmt.Errorf("invalid status token")
+}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Create mocks
-			mockRegistry := new(MockRegistryService)
-			mockAuthService := new(MockAuthService)
-
-			// Setup mocks
-			tc.setupMocks(mockRegistry, mockAuthService)
-
-			// Create handler
-			handler := v0.PublishHandler(mockRegistry, mockAuthService)
-
-			// Prepare request body
-			var requestBody []byte
-			if tc.requestBody != nil {
-				var err error
-				requestBody, err = json.Marshal(tc.requestBody)
-				assert.NoError(t, err)
-			}
-
-			// Create request
-			req, err := http.NewRequestWithContext(context.Background(), tc.method, "/publish", bytes.NewBuffer(requestBody))
-			assert.NoError(t, err)
-
-			// Set auth header if provided
-			if tc.authHeader != "" {
-				req.Header.Set("Authorization", tc.authHeader)
-			}
-
-			// Create response recorder
-			rr := httptest.NewRecorder()
-
-			// Call the handler
-			handler.ServeHTTP(rr, req)
-
-			// Check status code
-			assert.Equal(t, tc.expectedStatus, rr.Code)
-
-			if tc.expectedResponse != nil {
-				// Check content type for successful responses
-				assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-
-				// Parse and verify response body
-				var response map[string]string
-				err = json.NewDecoder(rr.Body).Decode(&response)
-				assert.NoError(t, err)
-				assert.Equal(t, tc.expectedResponse, response)
-			}
-
-			if tc.expectedError != "" {
-				// Check that the error message is contained in the response
-				assert.Contains(t, rr.Body.String(), tc.expectedError)
-			}
-
-			// Assert that all expectations were met
-			mockRegistry.Mock.AssertExpectations(t)
-			mockAuthService.Mock.AssertExpectations(t)
-		})
+func (m *MockAuthService) ValidateAuth(_ context.Context, authentication model.Authentication) (bool, error) {
+	// Simple validation: for testing purposes, accept any non-empty token
+	switch authentication.Method {
+	case model.AuthMethodGitHub:
+		return authentication.Token != "", nil
+	case model.AuthMethodNone:
+		return true, nil
+	default:
+		return false, auth.ErrUnsupportedAuthMethod
 	}
 }
 
-func TestPublishHandlerBearerTokenParsing(t *testing.T) {
-	testCases := []struct {
-		name          string
-		authHeader    string
-		expectedToken string
-	}{
-		{
-			name:          "bearer token with Bearer prefix",
-			authHeader:    "Bearer github_token_123",
-			expectedToken: "github_token_123",
-		},
-		{
-			name:          "bearer token with bearer prefix (lowercase)",
-			authHeader:    "bearer github_token_123",
-			expectedToken: "github_token_123",
-		},
-		{
-			name:          "token without Bearer prefix",
-			authHeader:    "github_token_123",
-			expectedToken: "github_token_123",
-		},
-		{
-			name:          "mixed case Bearer prefix",
-			authHeader:    "BeArEr github_token_123",
-			expectedToken: "github_token_123",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockRegistry := new(MockRegistryService)
-			mockAuthService := new(MockAuthService)
-
-			// Setup mock to capture the actual token passed
-			mockAuthService.Mock.On("ValidateAuth", mock.Anything, mock.MatchedBy(func(auth model.Authentication) bool {
-				return auth.Token == tc.expectedToken
-			})).Return(true, nil)
-			mockRegistry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(nil)
-
-			handler := v0.PublishHandler(mockRegistry, mockAuthService)
-
-			serverDetail := model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        "test-server",
-					Description: "A test server",
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			}
-
-			requestBody, err := json.Marshal(serverDetail)
-			assert.NoError(t, err)
-
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/publish", bytes.NewBuffer(requestBody))
-			assert.NoError(t, err)
-			req.Header.Set("Authorization", tc.authHeader)
-
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
-
-			assert.Equal(t, http.StatusCreated, rr.Code)
-			mockAuthService.Mock.AssertExpectations(t)
-		})
-	}
-}
-
-func TestPublishHandlerAuthMethodSelection(t *testing.T) {
-	testCases := []struct {
-		name               string
-		serverName         string
-		expectedAuthMethod model.AuthMethod
-	}{
-		{
-			name:               "GitHub prefix triggers GitHub auth",
-			serverName:         "io.github.example/test-server",
-			expectedAuthMethod: model.AuthMethodGitHub,
-		},
-		{
-			name:               "non-GitHub prefix uses no auth",
-			serverName:         "example.com/test-server",
-			expectedAuthMethod: model.AuthMethodNone,
-		},
-		{
-			name:               "empty prefix uses no auth",
-			serverName:         "test-server",
-			expectedAuthMethod: model.AuthMethodNone,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockRegistry := new(MockRegistryService)
-			mockAuthService := new(MockAuthService)
-
-			// Setup mock to capture the auth method
-			mockAuthService.Mock.On("ValidateAuth", mock.Anything, mock.MatchedBy(func(auth model.Authentication) bool {
-				return auth.Method == tc.expectedAuthMethod
-			})).Return(true, nil)
-			mockRegistry.Mock.On("Publish", mock.AnythingOfType("*model.ServerDetail")).Return(nil)
-
-			handler := v0.PublishHandler(mockRegistry, mockAuthService)
-
-			serverDetail := model.ServerDetail{
-				Server: model.Server{
-					ID:          "test-id",
-					Name:        tc.serverName,
-					Description: "A test server",
-					VersionDetail: model.VersionDetail{
-						Version:     "1.0.0",
-						ReleaseDate: "2025-05-25T00:00:00Z",
-						IsLatest:    true,
-					},
-				},
-			}
-
-			requestBody, err := json.Marshal(serverDetail)
-			assert.NoError(t, err)
-
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/publish", bytes.NewBuffer(requestBody))
-			assert.NoError(t, err)
-			req.Header.Set("Authorization", "Bearer test_token")
-
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
-
-			assert.Equal(t, http.StatusCreated, rr.Code)
-			mockAuthService.Mock.AssertExpectations(t)
-		})
-	}
-}
-
+// TestPublishIntegration tests the complete flow of publishing a server using the fake service
 func TestPublishIntegration(t *testing.T) {
 	// Setup fake service and auth service
 	registryService := service.NewFakeRegistryService()
 	authService := &MockAuthService{}
-	authService.Mock.On("ValidateAuth", mock.Anything, mock.AnythingOfType("model.Authentication")).Return(true, nil)
 
 	// Create the publish handler
 	handler := v0.PublishHandler(registryService, authService)
@@ -738,11 +228,16 @@ func TestPublishIntegration(t *testing.T) {
 		assert.Contains(t, recorder.Body.String(), "Version is required")
 	})
 
-	t.Run("publish fails with missing authorization header", func(t *testing.T) {
+	t.Run("publish succeeds without authorization header", func(t *testing.T) {
 		serverDetail := &model.ServerDetail{
 			Server: model.Server{
 				Name:        "test-server",
 				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/example/test-server",
+					Source: "github",
+					ID:     "example/test-server",
+				},
 				VersionDetail: model.VersionDetail{
 					Version: "1.0.0",
 				},
@@ -754,13 +249,43 @@ func TestPublishIntegration(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/v0/publish", bytes.NewBuffer(jsonData))
 		req.Header.Set("Content-Type", "application/json")
-		// No Authorization header
+		// No Authorization header - should succeed since auth is optional
+
+		recorder := httptest.NewRecorder()
+		handler(recorder, req)
+
+		assert.Equal(t, http.StatusCreated, recorder.Code)
+		assert.Contains(t, recorder.Body.String(), "Server publication successful")
+	})
+
+	t.Run("publish fails with github namespace without authorization", func(t *testing.T) {
+		serverDetail := &model.ServerDetail{
+			Server: model.Server{
+				Name:        "io.github.user/test-server", // GitHub namespace requires auth
+				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/user/test-server",
+					Source: "github",
+					ID:     "user/test-server",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+			},
+		}
+
+		jsonData, err := json.Marshal(serverDetail)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/v0/publish", bytes.NewBuffer(jsonData))
+		req.Header.Set("Content-Type", "application/json")
+		// No Authorization header for GitHub namespace
 
 		recorder := httptest.NewRecorder()
 		handler(recorder, req)
 
 		assert.Equal(t, http.StatusUnauthorized, recorder.Code)
-		assert.Contains(t, recorder.Body.String(), "Authorization header is required")
+		assert.Contains(t, recorder.Body.String(), "Authentication is required for this server namespace")
 	})
 
 	t.Run("publish fails with invalid JSON", func(t *testing.T) {
@@ -1016,79 +541,10 @@ func TestPublishIntegration(t *testing.T) {
 	})
 }
 
-func TestPublishIntegrationEndToEnd(t *testing.T) {
-	registryService := service.NewFakeRegistryService()
-	authService := &MockAuthService{}
-	authService.Mock.On("ValidateAuth", mock.Anything, mock.AnythingOfType("model.Authentication")).Return(true, nil)
-	handler := v0.PublishHandler(registryService, authService)
-
-	t.Run("end-to-end publish and retrieve flow", func(t *testing.T) {
-		// Step 1: Get initial count of servers
-		initialServers, _, err := registryService.List("", 100)
-		require.NoError(t, err)
-		initialCount := len(initialServers)
-
-		// Step 2: Publish a new server
-		serverDetail := &model.ServerDetail{
-			Server: model.Server{
-				Name:        "io.github.e2e/end-to-end-server",
-				Description: "End-to-end test server",
-				Repository: model.Repository{
-					URL:    "https://github.com/e2e/end-to-end-server",
-					Source: "github",
-					ID:     "e2e/end-to-end-server",
-				},
-				VersionDetail: model.VersionDetail{
-					Version: "1.0.0",
-				},
-			},
-		}
-
-		jsonData, err := json.Marshal(serverDetail)
-		require.NoError(t, err)
-
-		req := httptest.NewRequest(http.MethodPost, "/v0/publish", bytes.NewBuffer(jsonData))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer github_e2e_token")
-
-		recorder := httptest.NewRecorder()
-		handler(recorder, req)
-
-		var response map[string]string
-		err = json.Unmarshal(recorder.Body.Bytes(), &response)
-		require.NoError(t, err)
-		serverDetail.ID = response["id"] // Store the ID for later verification
-
-		require.Equal(t, http.StatusCreated, recorder.Code)
-
-		// Step 3: Verify the count increased
-		updatedServers, _, err := registryService.List("", 100)
-		require.NoError(t, err)
-		assert.Equal(t, initialCount+1, len(updatedServers))
-
-		// Step 4: Verify the server can be retrieved by ID
-		retrievedServer, err := registryService.GetByID(serverDetail.ID)
-		require.NoError(t, err)
-		assert.Equal(t, serverDetail.Name, retrievedServer.Name)
-		assert.Equal(t, serverDetail.Description, retrievedServer.Description)
-
-		// Step 5: Verify the server appears in the list
-		found := false
-		for _, server := range updatedServers {
-			if server.ID == serverDetail.ID {
-				found = true
-				assert.Equal(t, serverDetail.Name, server.Name)
-				break
-			}
-		}
-		assert.True(t, found, "Published server should appear in the list")
-	})
-}
-
+// TestPublishIntegrationWithComplexPackages tests publishing with complex package configurations
 func TestPublishIntegrationWithComplexPackages(t *testing.T) {
 	registryService := service.NewFakeRegistryService()
 	authService := &MockAuthService{}
-	authService.Mock.On("ValidateAuth", mock.Anything, mock.AnythingOfType("model.Authentication")).Return(true, nil)
 	handler := v0.PublishHandler(registryService, authService)
 
 	t.Run("publish with complex package configuration", func(t *testing.T) {
@@ -1233,5 +689,74 @@ func TestPublishIntegrationWithComplexPackages(t *testing.T) {
 		require.Len(t, publishedServer.Remotes, 1)
 		assert.Equal(t, "http", publishedServer.Remotes[0].TransportType)
 		assert.Len(t, publishedServer.Remotes[0].Headers, 1)
+	})
+}
+
+// TestPublishIntegrationEndToEnd tests the complete end-to-end flow
+func TestPublishIntegrationEndToEnd(t *testing.T) {
+	registryService := service.NewFakeRegistryService()
+	authService := &MockAuthService{}
+	handler := v0.PublishHandler(registryService, authService)
+
+	t.Run("end-to-end publish and retrieve flow", func(t *testing.T) {
+		// Step 1: Get initial count of servers
+		initialServers, _, err := registryService.List("", 100)
+		require.NoError(t, err)
+		initialCount := len(initialServers)
+
+		// Step 2: Publish a new server
+		serverDetail := &model.ServerDetail{
+			Server: model.Server{
+				Name:        "io.github.e2e/end-to-end-server",
+				Description: "End-to-end test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/e2e/end-to-end-server",
+					Source: "github",
+					ID:     "e2e/end-to-end-server",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+			},
+		}
+
+		jsonData, err := json.Marshal(serverDetail)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/v0/publish", bytes.NewBuffer(jsonData))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer github_e2e_token")
+
+		recorder := httptest.NewRecorder()
+		handler(recorder, req)
+
+		var response map[string]string
+		err = json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err)
+		serverDetail.ID = response["id"] // Store the ID for later verification
+
+		require.Equal(t, http.StatusCreated, recorder.Code)
+
+		// Step 3: Verify the count increased
+		updatedServers, _, err := registryService.List("", 100)
+		require.NoError(t, err)
+		assert.Equal(t, initialCount+1, len(updatedServers))
+
+		// Step 4: Verify the server can be retrieved by ID
+		retrievedServer, err := registryService.GetByID(serverDetail.ID)
+		require.NoError(t, err)
+		assert.Equal(t, serverDetail.Name, retrievedServer.Name)
+		assert.Equal(t, serverDetail.Description, retrievedServer.Description)
+
+		// Step 5: Verify the server appears in the list
+		found := false
+		for _, server := range updatedServers {
+			if server.ID == serverDetail.ID {
+				found = true
+				assert.Equal(t, serverDetail.Name, server.Name)
+				break
+			}
+		}
+		assert.True(t, found, "Published server should appear in the list")
 	})
 }
