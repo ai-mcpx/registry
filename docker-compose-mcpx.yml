@@ -48,6 +48,21 @@ services:
       - mcpx-network
     restart: unless-stopped
 
+  nginx:
+    image: nginx:alpine
+    container_name: mcpx-nginx
+    depends_on:
+      - mcpx-ui
+      - mcpx
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - mcpx-network
+    restart: unless-stopped
+
 networks:
   mcpx-network:
     driver: bridge
