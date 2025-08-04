@@ -26,7 +26,7 @@ func SwaggerHandler() http.HandlerFunc {
 		var jsonURL string
 		if r.Header.Get("X-Forwarded-Proto") != "" || r.Header.Get("X-Real-IP") != "" {
 			// Being accessed through a proxy (nginx), use external URL
-			jsonURL = "/api/swagger/doc.json"
+			jsonURL = "/v0/swagger/doc.json"
 		} else {
 			// Direct access, use internal URL
 			jsonURL = "/v0/swagger/doc.json"
