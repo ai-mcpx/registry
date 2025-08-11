@@ -292,6 +292,71 @@ paths:
           description: Server not found
         '405':
           description: Method not allowed
+    put:
+      tags:
+        - servers
+      summary: Update server details
+      description: Updates details of a specific server by ID
+      operationId: updateServerDetails
+      parameters:
+        - name: id
+          in: path
+          description: Server ID (UUID)
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServerDetail'
+            example:
+              name: "io.github.gongrzhe/redis-mcp-server"
+              description: "Updated description for Redis MCP server implementation"
+              status: "active"
+              repository:
+                url: "https://github.com/GongRzhe/REDIS-MCP-Server"
+                source: "github"
+                id: "907849235"
+              version_detail:
+                version: "0.0.2"
+              packages:
+                - registry_name: "docker"
+                  name: "@gongrzhe/server-redis-mcp"
+                  version: "1.0.1"
+      responses:
+        '200':
+          description: Successfully updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Server updated successfully"
+                  id:
+                    type: string
+                    format: uuid
+                    example: "01129bff-3d65-4e3d-8e82-6f2f269f818c"
+        '400':
+          description: Invalid input data or version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Invalid version: cannot update to an older version"
+        '404':
+          description: Server not found
+        '409':
+          description: Conflict - server with this version already exists
+        '500':
+          description: Internal server error
 
 components:
   securitySchemes:

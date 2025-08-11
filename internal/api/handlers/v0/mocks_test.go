@@ -27,6 +27,11 @@ func (m *MockRegistryService) Publish(serverDetail *model.ServerDetail) error {
 	return args.Error(0)
 }
 
+func (m *MockRegistryService) Update(id string, serverDetail *model.ServerDetail) error {
+	args := m.Called(id, serverDetail)
+	return args.Error(0)
+}
+
 // MockAuthService is a mock implementation of the auth.Service interface
 type MockAuthService struct {
 	mock.Mock

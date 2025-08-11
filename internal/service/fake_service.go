@@ -123,6 +123,16 @@ func (s *fakeRegistryService) Publish(serverDetail *model.ServerDetail) error {
 	return s.db.Publish(ctx, serverDetail)
 }
 
+// Update modifies an existing server detail in the in-memory database
+func (s *fakeRegistryService) Update(id string, serverDetail *model.ServerDetail) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use the database's Update method to modify the server detail
+	return s.db.Update(ctx, id, serverDetail)
+}
+
 // Close closes the in-memory database connection
 func (s *fakeRegistryService) Close() error {
 	return s.db.Close()
