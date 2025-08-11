@@ -357,6 +357,41 @@ paths:
           description: Conflict - server with this version already exists
         '500':
           description: Internal server error
+    delete:
+      tags:
+        - servers
+      summary: Delete server
+      description: Deletes a specific server by ID
+      operationId: deleteServer
+      parameters:
+        - name: id
+          in: path
+          description: Server ID (UUID)
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Server deleted successfully"
+                  id:
+                    type: string
+                    format: uuid
+                    example: "01129bff-3d65-4e3d-8e82-6f2f269f818c"
+        '400':
+          description: Invalid ID format
+        '404':
+          description: Server not found
+        '500':
+          description: Internal server error
 
 components:
   securitySchemes:

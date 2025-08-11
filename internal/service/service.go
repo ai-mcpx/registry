@@ -8,4 +8,5 @@ type RegistryService interface {
 	GetByID(id string) (*model.ServerDetail, error)
 	Publish(serverDetail *model.ServerDetail) error
 	Update(id string, serverDetail *model.ServerDetail) error
+	Delete(id string) error
 }

@@ -291,6 +291,28 @@ func (db *MongoDB) Update(ctx context.Context, id string, serverDetail *model.Se
 	return nil
 }
 
+// Delete removes a ServerDetail from the database by ID
+func (db *MongoDB) Delete(ctx context.Context, id string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Create filter based on server ID
+	filter := bson.M{"id": id}
+
+	// Delete the document
+	result, err := db.collection.DeleteOne(ctx, filter)
+	if err != nil {
+		return fmt.Errorf("error deleting entry: %w", err)
+	}
+
+	if result.DeletedCount == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // ImportSeed imports initial data from a seed file into MongoDB
 func (db *MongoDB) ImportSeed(ctx context.Context, seedFilePath string) error {
 	// Read the seed file

@@ -305,6 +305,27 @@ func (db *MemoryDB) Update(ctx context.Context, id string, serverDetail *model.S
 	return nil
 }
 
+// Delete removes a ServerDetail from the database by ID
+func (db *MemoryDB) Delete(ctx context.Context, id string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	// Check if the server exists
+	_, exists := db.entries[id]
+	if !exists {
+		return ErrNotFound
+	}
+
+	// Delete the entry
+	delete(db.entries, id)
+
+	return nil
+}
+
 // ImportSeed imports initial data from a seed file into memory database
 func (db *MemoryDB) ImportSeed(ctx context.Context, seedFilePath string) error {
 	if ctx.Err() != nil {

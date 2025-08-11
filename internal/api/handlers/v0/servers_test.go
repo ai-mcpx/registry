@@ -508,3 +508,80 @@ func TestServersDetailHandler_PUT(t *testing.T) {
 		})
 	}
 }
+
+// TestServersDetailHandler_DELETE tests the DELETE functionality for deleting servers
+func TestServersDetailHandler_DELETE(t *testing.T) {
+	serverID := uuid.New().String()
+
+	testCases := []struct {
+		name           string
+		setupMocks     func(*MockRegistryService)
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name: "successful delete",
+			setupMocks: func(registry *MockRegistryService) {
+				registry.Mock.On("Delete", serverID).Return(nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   `{"message":"Server deleted successfully","id":"` + serverID + `"}`,
+		},
+		{
+			name: "server not found",
+			setupMocks: func(registry *MockRegistryService) {
+				registry.Mock.On("Delete", serverID).Return(errors.New("record not found"))
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "Server not found\n",
+		},
+		{
+			name: "internal server error",
+			setupMocks: func(registry *MockRegistryService) {
+				registry.Mock.On("Delete", serverID).Return(errors.New("database connection failed"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   "Failed to delete server: database connection failed\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create mock registry service
+			mockRegistry := new(MockRegistryService)
+			tc.setupMocks(mockRegistry)
+
+			// Create test server
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				r.SetPathValue("id", serverID)
+				v0.ServersDetailHandler(mockRegistry).ServeHTTP(w, r)
+			}))
+			defer server.Close()
+
+			// Send DELETE request
+			ctx := context.Background()
+			req, err := http.NewRequestWithContext(ctx, http.MethodDelete, server.URL, nil)
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("Failed to send request: %v", err)
+			}
+			defer resp.Body.Close()
+
+			// Check status code
+			assert.Equal(t, tc.expectedStatus, resp.StatusCode)
+
+			// Check response body
+			body, err := io.ReadAll(resp.Body)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedBody, string(body))
+
+			// Verify mock expectations
+			mockRegistry.AssertExpectations(t)
+		})
+	}
+}

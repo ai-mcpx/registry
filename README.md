@@ -207,10 +207,13 @@ The API is documented using Swagger/OpenAPI. This page provides a complete refer
 - `GET /v0/servers` - List all registered servers with pagination
 - `GET /v0/servers/{id}` - Get details of a specific server by ID
 - `PUT /v0/servers/{id}` - Update a specific server by ID
+- `DELETE /v0/servers/{id}` - Delete a specific server by ID
 - `POST /v0/publish` - Publish a new server to the registry
 - `GET /v0/health` - Health check endpoint
 
 **Note**: The `PUT /v0/servers/{id}` endpoint allows updating server details including version information. When updating a version, it must be greater than the existing version to maintain version ordering.
+
+**Note**: The `DELETE /v0/servers/{id}` endpoint permanently removes a server from the registry. This action cannot be undone.
 
 ## Configuration
 

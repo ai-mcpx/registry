@@ -111,6 +111,8 @@ func ServersDetailHandler(registry service.RegistryService) http.HandlerFunc {
 			handleGetServer(w, r, registry, id)
 		case http.MethodPut:
 			handleUpdateServer(w, r, registry, id)
+		case http.MethodDelete:
+			handleDeleteServer(w, r, registry, id)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -190,6 +192,31 @@ func handleUpdateServer(w http.ResponseWriter, r *http.Request, registry service
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "Server updated successfully",
+		"id":      id,
+	}); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleDeleteServer handles DELETE requests for deleting server details
+func handleDeleteServer(w http.ResponseWriter, r *http.Request, registry service.RegistryService, id string) {
+	// Call the delete method on the registry service
+	err := registry.Delete(id)
+	if err != nil {
+		// Check for specific error types and return appropriate HTTP status codes
+		if err.Error() == "record not found" {
+			http.Error(w, "Server not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to delete server: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"message": "Server deleted successfully",
 		"id":      id,
 	}); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)

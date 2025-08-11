@@ -32,6 +32,11 @@ func (m *MockRegistryService) Update(id string, serverDetail *model.ServerDetail
 	return args.Error(0)
 }
 
+func (m *MockRegistryService) Delete(id string) error {
+	args := m.Called(id)
+	return args.Error(0)
+}
+
 // MockAuthService is a mock implementation of the auth.Service interface
 type MockAuthService struct {
 	mock.Mock

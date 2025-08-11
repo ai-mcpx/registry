@@ -127,3 +127,17 @@ func (s *registryServiceImpl) Update(id string, serverDetail *model.ServerDetail
 
 	return nil
 }
+
+// Delete removes a server detail from the registry
+func (s *registryServiceImpl) Delete(id string) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := s.db.Delete(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

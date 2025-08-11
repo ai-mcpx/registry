@@ -133,6 +133,16 @@ func (s *fakeRegistryService) Update(id string, serverDetail *model.ServerDetail
 	return s.db.Update(ctx, id, serverDetail)
 }
 
+// Delete removes a server detail from the in-memory database
+func (s *fakeRegistryService) Delete(id string) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use the database's Delete method to remove the server detail
+	return s.db.Delete(ctx, id)
+}
+
 // Close closes the in-memory database connection
 func (s *fakeRegistryService) Close() error {
 	return s.db.Close()
