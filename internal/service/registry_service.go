@@ -101,3 +101,43 @@ func (s *registryServiceImpl) Publish(serverDetail *model.ServerDetail) error {
 
 	return nil
 }
+
+// Update modifies an existing server detail in the registry
+func (s *registryServiceImpl) Update(id string, serverDetail *model.ServerDetail) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if serverDetail == nil {
+		return database.ErrInvalidInput
+	}
+
+	// Ensure the ID in the URL matches the ID in the server detail
+	if serverDetail.ID != "" && serverDetail.ID != id {
+		return database.ErrInvalidInput
+	}
+
+	// Set the ID in the server detail to match the URL parameter
+	serverDetail.ID = id
+
+	err := s.db.Update(ctx, id, serverDetail)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Delete removes a server detail from the registry
+func (s *registryServiceImpl) Delete(id string) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := s.db.Delete(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

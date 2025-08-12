@@ -232,6 +232,87 @@ func (db *MongoDB) Publish(ctx context.Context, serverDetail *model.ServerDetail
 	return nil
 }
 
+// Update modifies an existing ServerDetail in the database
+func (db *MongoDB) Update(ctx context.Context, id string, serverDetail *model.ServerDetail) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Check if the server exists
+	filter := bson.M{"id": id}
+	var existingEntry model.ServerDetail
+	err := db.collection.FindOne(ctx, filter).Decode(&existingEntry)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("error finding existing entry: %w", err)
+	}
+
+	// Preserve the original ID and creation metadata
+	serverDetail.ID = id
+
+	// If version is being updated, check it's greater than existing
+	if serverDetail.VersionDetail.Version != "" &&
+	   serverDetail.VersionDetail.Version != existingEntry.VersionDetail.Version {
+		if serverDetail.VersionDetail.Version <= existingEntry.VersionDetail.Version {
+			return ErrInvalidVersion
+		}
+		// Update version metadata
+		serverDetail.VersionDetail.IsLatest = true
+		serverDetail.VersionDetail.ReleaseDate = time.Now().Format(time.RFC3339)
+
+		// If this is the same server (name), mark old versions as not latest
+		if serverDetail.Name == existingEntry.Name {
+			_, err = db.collection.UpdateMany(
+				ctx,
+				bson.M{"name": serverDetail.Name, "id": bson.M{"$ne": id}},
+				bson.M{"$set": bson.M{"version_detail.is_latest": false}})
+			if err != nil {
+				return fmt.Errorf("error updating previous versions: %w", err)
+			}
+		}
+	} else {
+		// Preserve existing version metadata if not updating version
+		serverDetail.VersionDetail = existingEntry.VersionDetail
+	}
+
+	// Update the document
+	update := bson.M{"$set": serverDetail}
+	result, err := db.collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("error updating entry: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// Delete removes a ServerDetail from the database by ID
+func (db *MongoDB) Delete(ctx context.Context, id string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Create filter based on server ID
+	filter := bson.M{"id": id}
+
+	// Delete the document
+	result, err := db.collection.DeleteOne(ctx, filter)
+	if err != nil {
+		return fmt.Errorf("error deleting entry: %w", err)
+	}
+
+	if result.DeletedCount == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // ImportSeed imports initial data from a seed file into MongoDB
 func (db *MongoDB) ImportSeed(ctx context.Context, seedFilePath string) error {
 	// Read the seed file

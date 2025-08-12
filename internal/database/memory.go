@@ -245,6 +245,87 @@ func (db *MemoryDB) Publish(ctx context.Context, serverDetail *model.ServerDetai
 	return nil
 }
 
+// Update modifies an existing ServerDetail in the database
+func (db *MemoryDB) Update(ctx context.Context, id string, serverDetail *model.ServerDetail) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	// Check if the server exists
+	existingEntry, exists := db.entries[id]
+	if !exists {
+		return ErrNotFound
+	}
+
+	// Preserve the original ID
+	serverDetail.ID = id
+
+	// If version is being updated, check it's greater than existing
+	if serverDetail.VersionDetail.Version != "" &&
+	   serverDetail.VersionDetail.Version != existingEntry.VersionDetail.Version {
+
+		// Check version ordering - don't allow updating to older versions
+		if compareSemanticVersions(serverDetail.VersionDetail.Version, existingEntry.VersionDetail.Version) < 0 {
+			return ErrInvalidVersion
+		}
+
+		// Check uniqueness against other entries with the same name
+		for entryID, entry := range db.entries {
+			if entryID != id && entry.Name == serverDetail.Name {
+				if entry.VersionDetail.Version == serverDetail.VersionDetail.Version {
+					return ErrAlreadyExists
+				}
+			}
+		}
+
+		// Update version metadata
+		serverDetail.VersionDetail.IsLatest = true
+		serverDetail.VersionDetail.ReleaseDate = time.Now().Format(time.RFC3339)
+
+		// If this is the same server (name), mark old versions as not latest
+		if serverDetail.Name == existingEntry.Name {
+			for entryID, entry := range db.entries {
+				if entryID != id && entry.Name == serverDetail.Name {
+					entry.VersionDetail.IsLatest = false
+				}
+			}
+		}
+	} else {
+		// Preserve existing version metadata if not updating version
+		serverDetail.VersionDetail = existingEntry.VersionDetail
+	}
+
+	// Store a copy of the updated ServerDetail
+	serverDetailCopy := *serverDetail
+	db.entries[id] = &serverDetailCopy
+
+	return nil
+}
+
+// Delete removes a ServerDetail from the database by ID
+func (db *MemoryDB) Delete(ctx context.Context, id string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	// Check if the server exists
+	_, exists := db.entries[id]
+	if !exists {
+		return ErrNotFound
+	}
+
+	// Delete the entry
+	delete(db.entries, id)
+
+	return nil
+}
+
 // ImportSeed imports initial data from a seed file into memory database
 func (db *MemoryDB) ImportSeed(ctx context.Context, seedFilePath string) error {
 	if ctx.Err() != nil {

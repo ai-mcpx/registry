@@ -3,6 +3,7 @@ package v0
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -95,11 +96,6 @@ func ServersHandler(registry service.RegistryService) http.HandlerFunc {
 // ServersDetailHandler returns a handler for getting details of a specific server by ID
 func ServersDetailHandler(registry service.RegistryService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
 		// Extract the server ID from the URL path
 		id := r.PathValue("id")
 
@@ -110,21 +106,120 @@ func ServersDetailHandler(registry service.RegistryService) http.HandlerFunc {
 			return
 		}
 
-		// Get the server details from the registry service
-		serverDetail, err := registry.GetByID(id)
-		if err != nil {
-			if err.Error() == "record not found" {
-				http.Error(w, "Server not found", http.StatusNotFound)
-				return
-			}
-			http.Error(w, "Error retrieving server details", http.StatusInternalServerError)
+		switch r.Method {
+		case http.MethodGet:
+			handleGetServer(w, r, registry, id)
+		case http.MethodPut:
+			handleUpdateServer(w, r, registry, id)
+		case http.MethodDelete:
+			handleDeleteServer(w, r, registry, id)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+	}
+}
 
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(serverDetail); err != nil {
-			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+// handleGetServer handles GET requests for server details
+func handleGetServer(w http.ResponseWriter, r *http.Request, registry service.RegistryService, id string) {
+	// Get the server details from the registry service
+	serverDetail, err := registry.GetByID(id)
+	if err != nil {
+		if err.Error() == "record not found" {
+			http.Error(w, "Server not found", http.StatusNotFound)
 			return
 		}
+		http.Error(w, "Error retrieving server details", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(serverDetail); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleUpdateServer handles PUT requests for updating server details
+func handleUpdateServer(w http.ResponseWriter, r *http.Request, registry service.RegistryService, id string) {
+	// Read the request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	// Parse request body into ServerDetail struct
+	var serverDetail model.ServerDetail
+	err = json.Unmarshal(body, &serverDetail)
+	if err != nil {
+		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if serverDetail.Name == "" {
+		http.Error(w, "Name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Call the update method on the registry service
+	err = registry.Update(id, &serverDetail)
+	if err != nil {
+		// Check for specific error types and return appropriate HTTP status codes
+		if err.Error() == "record not found" {
+			http.Error(w, "Server not found", http.StatusNotFound)
+			return
+		}
+		if err.Error() == "invalid input" {
+			http.Error(w, "Invalid input data", http.StatusBadRequest)
+			return
+		}
+		if err.Error() == "invalid version: cannot publish older version after newer version" {
+			http.Error(w, "Invalid version: cannot update to an older version", http.StatusBadRequest)
+			return
+		}
+		if err.Error() == "record already exists" {
+			http.Error(w, "A server with this version already exists", http.StatusConflict)
+			return
+		}
+		http.Error(w, "Failed to update server details: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"message": "Server updated successfully",
+		"id":      id,
+	}); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleDeleteServer handles DELETE requests for deleting server details
+func handleDeleteServer(w http.ResponseWriter, r *http.Request, registry service.RegistryService, id string) {
+	// Call the delete method on the registry service
+	err := registry.Delete(id)
+	if err != nil {
+		// Check for specific error types and return appropriate HTTP status codes
+		if err.Error() == "record not found" {
+			http.Error(w, "Server not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to delete server: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"message": "Server deleted successfully",
+		"id":      id,
+	}); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
 }

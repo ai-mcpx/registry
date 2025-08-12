@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  mcpx:
+    image: craftslab/mcpx:latest
+    container_name: mcpx
+    links:
+      - mongodb
+    depends_on:
+      - mongodb
+    environment:
+      - MCP_REGISTRY_DATABASE_TYPE=mongodb
+      - MCP_REGISTRY_SEED_IMPORT=false
+      - MCP_REGISTRY_DATABASE_URL=${MCP_REGISTRY_DATABASE_URL:-mongodb://mongodb:27017}
+      - MCP_REGISTRY_ENVIRONMENT=${MCP_REGISTRY_ENVIRONMENT:-test}
+      - MCP_REGISTRY_GITHUB_CLIENT_ID=${MCP_REGISTRY_GITHUB_CLIENT_ID}
+      - MCP_REGISTRY_GITHUB_CLIENT_SECRET=${MCP_REGISTRY_GITHUB_CLIENT_SECRET}
+    ports:
+      - 8080:8080
+    networks:
+      - mcpx-network
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo
+    container_name: mongodb
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./.db:/data/db
+    ports:
+      - 27017:27017
+    networks:
+      - mcpx-network
+    restart: unless-stopped
+
+  mcpx-ui:
+    image: craftslab/mcpx-ui:latest
+    container_name: mcpx-ui
+    depends_on:
+      - mcpx
+    ports:
+      - 5173:5173
+    environment:
+      - NODE_ENV=production
+    networks:
+      - mcpx-network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: mcpx-nginx
+    depends_on:
+      - mcpx-ui
+      - mcpx
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - mcpx-network
+    restart: unless-stopped
+
+networks:
+  mcpx-network:
+    driver: bridge
