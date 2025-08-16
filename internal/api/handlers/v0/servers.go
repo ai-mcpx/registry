@@ -10,6 +10,11 @@ import (
 	"github.com/modelcontextprotocol/registry/internal/service"
 )
 
+// Constants for error messages
+const (
+	ErrRecordNotFound = "record not found"
+)
+
 // Metadata contains pagination metadata
 type Metadata struct {
 	NextCursor string `json:"next_cursor,omitempty"`
@@ -32,6 +37,29 @@ type ListServersBody struct {
 // ServerDetailInput represents the input for getting server details
 type ServerDetailInput struct {
 	ID string `path:"id" doc:"Server ID (UUID)" format:"uuid"`
+}
+
+// UpdateServerInput represents the input for updating server details
+type UpdateServerInput struct {
+	ID   string             `path:"id" doc:"Server ID (UUID)" format:"uuid"`
+	Body model.ServerDetail `json:"body" doc:"Server details to update"`
+}
+
+// DeleteServerInput represents the input for deleting a server
+type DeleteServerInput struct {
+	ID string `path:"id" doc:"Server ID (UUID)" format:"uuid"`
+}
+
+// UpdateServerBody represents the response body for server update
+type UpdateServerBody struct {
+	Message string `json:"message" doc:"Success message"`
+	ID      string `json:"id" doc:"Updated server ID"`
+}
+
+// DeleteServerBody represents the response body for server deletion
+type DeleteServerBody struct {
+	Message string `json:"message" doc:"Success message"`
+	ID      string `json:"id" doc:"Deleted server ID"`
 }
 
 
@@ -90,7 +118,7 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		// Get the server details from the registry service
 		serverDetail, err := registry.GetByID(input.ID)
 		if err != nil {
-			if err.Error() == "record not found" {
+			if err.Error() == ErrRecordNotFound {
 				return nil, huma.Error404NotFound("Server not found")
 			}
 			return nil, huma.Error500InternalServerError("Failed to get server details", err)
@@ -98,6 +126,71 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 
 		return &Response[model.ServerDetail]{
 			Body: *serverDetail,
+		}, nil
+	})
+
+	// Update server details endpoint
+	huma.Register(api, huma.Operation{
+		OperationID: "update-server",
+		Method:      http.MethodPut,
+		Path:        "/v0/servers/{id}",
+		Summary:     "Update MCP server details",
+		Description: "Update detailed information about a specific MCP server",
+		Tags:        []string{"servers"},
+	}, func(_ context.Context, input *UpdateServerInput) (*Response[UpdateServerBody], error) {
+		// Validate required fields
+		if input.Body.Name == "" {
+			return nil, huma.Error400BadRequest("Name is required")
+		}
+
+		// Call the update method on the registry service
+		err := registry.Update(input.ID, &input.Body)
+		if err != nil {
+			// Check for specific error types and return appropriate HTTP status codes
+			if err.Error() == ErrRecordNotFound {
+				return nil, huma.Error404NotFound("Server not found")
+			}
+			if err.Error() == "invalid version" {
+				return nil, huma.Error400BadRequest("Invalid version: cannot update to an older version")
+			}
+			if err.Error() == "record already exists" {
+				return nil, huma.Error409Conflict("A server with this version already exists")
+			}
+			return nil, huma.Error500InternalServerError("Failed to update server details", err)
+		}
+
+		return &Response[UpdateServerBody]{
+			Body: UpdateServerBody{
+				Message: "Server updated successfully",
+				ID:      input.ID,
+			},
+		}, nil
+	})
+
+	// Delete server endpoint
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-server",
+		Method:      http.MethodDelete,
+		Path:        "/v0/servers/{id}",
+		Summary:     "Delete MCP server",
+		Description: "Delete a specific MCP server from the registry",
+		Tags:        []string{"servers"},
+	}, func(_ context.Context, input *DeleteServerInput) (*Response[DeleteServerBody], error) {
+		// Call the delete method on the registry service
+		err := registry.Delete(input.ID)
+		if err != nil {
+			// Check for specific error types and return appropriate HTTP status codes
+			if err.Error() == ErrRecordNotFound {
+				return nil, huma.Error404NotFound("Server not found")
+			}
+			return nil, huma.Error500InternalServerError("Failed to delete server", err)
+		}
+
+		return &Response[DeleteServerBody]{
+			Body: DeleteServerBody{
+				Message: "Server deleted successfully",
+				ID:      input.ID,
+			},
 		}, nil
 	})
 }

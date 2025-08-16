@@ -13,10 +13,9 @@ import (
 
 // PublishServerInput represents the input for publishing a server
 type PublishServerInput struct {
-	Authorization string `header:"Authorization" doc:"GitHub OAuth token" required:"true"`
+	Authorization string `header:"Authorization" doc:"GitHub OAuth token" required:"false"`
 	Body          model.PublishRequest
 }
-
 
 // RegisterPublishEndpoint registers the publish endpoint
 func RegisterPublishEndpoint(api huma.API, registry service.RegistryService, authService auth.Service) {
@@ -27,17 +26,18 @@ func RegisterPublishEndpoint(api huma.API, registry service.RegistryService, aut
 		Summary:     "Publish MCP server",
 		Description: "Publish a new MCP server to the registry or update an existing one",
 		Tags:        []string{"publish"},
-		Security: []map[string][]string{
-			{"bearer": {}},
-		},
 	}, func(ctx context.Context, input *PublishServerInput) (*Response[model.Server], error) {
-		// Extract bearer token
-		const bearerPrefix = "Bearer "
+		// Extract bearer token if provided
+		var token string
 		authHeader := input.Authorization
-		if len(authHeader) < len(bearerPrefix) || !strings.EqualFold(authHeader[:len(bearerPrefix)], bearerPrefix) {
-			return nil, huma.Error401Unauthorized("Invalid Authorization header format. Expected 'Bearer <token>'")
+		if authHeader != "" {
+			const bearerPrefix = "Bearer "
+			if len(authHeader) >= len(bearerPrefix) && strings.EqualFold(authHeader[:len(bearerPrefix)], bearerPrefix) {
+				token = authHeader[len(bearerPrefix):]
+			} else {
+				token = authHeader
+			}
 		}
-		token := authHeader[len(bearerPrefix):]
 
 		// Convert PublishRequest body to ServerDetail
 		serverDetail := input.Body.ServerDetail
@@ -66,17 +66,33 @@ func RegisterPublishEndpoint(api huma.API, registry service.RegistryService, aut
 			RepoRef: serverDetail.Name,
 		}
 
-		// Validate authentication
-		valid, err := authService.ValidateAuth(ctx, a)
-		if err != nil {
-			return nil, huma.Error401Unauthorized("Authentication failed", err)
-		}
-		if !valid {
-			return nil, huma.Error401Unauthorized("Invalid authentication credentials")
+		// Validate authentication only if required by auth method or if token is provided
+		if authMethod == model.AuthMethodGitHub {
+			// GitHub auth method requires authentication
+			if token == "" {
+				return nil, huma.Error401Unauthorized("Authentication is required for this server namespace")
+			}
+
+			valid, err := authService.ValidateAuth(ctx, a)
+			if err != nil {
+				return nil, huma.Error401Unauthorized("Authentication failed", err)
+			}
+			if !valid {
+				return nil, huma.Error401Unauthorized("Invalid authentication credentials")
+			}
+		} else if token != "" {
+			// If a token is provided but auth method is None, validate it anyway
+			valid, err := authService.ValidateAuth(ctx, a)
+			if err != nil {
+				return nil, huma.Error401Unauthorized("Authentication failed", err)
+			}
+			if !valid {
+				return nil, huma.Error401Unauthorized("Invalid authentication credentials")
+			}
 		}
 
 		// Publish the server details
-		err = registry.Publish(&serverDetail)
+		err := registry.Publish(&serverDetail)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to publish server", err)
 		}

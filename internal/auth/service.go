@@ -44,9 +44,14 @@ func (s *ServiceImpl) CheckAuthStatus(_ context.Context, _ string) (string, erro
 
 // ValidateAuth validates authentication credentials
 func (s *ServiceImpl) ValidateAuth(ctx context.Context, auth model.Authentication) (bool, error) {
-	// If authentication is required but not provided
+	// If no authentication method is specified or AuthMethodNone, allow without validation
 	if auth.Method == "" || auth.Method == model.AuthMethodNone {
-		return false, ErrAuthRequired
+		// If a token is provided with AuthMethodNone, it's an error
+		if auth.Token != "" && auth.Method == model.AuthMethodNone {
+			return false, fmt.Errorf("token provided but authentication method is 'none'")
+		}
+		// Allow publication without authentication
+		return true, nil
 	}
 
 	switch auth.Method {
@@ -54,7 +59,8 @@ func (s *ServiceImpl) ValidateAuth(ctx context.Context, auth model.Authenticatio
 		// Extract repo reference from the repository URL if it's not provided
 		return s.githubAuth.ValidateToken(ctx, auth.Token, auth.RepoRef)
 	case model.AuthMethodNone:
-		return false, ErrAuthRequired
+		// For 'none' auth method, we already handled validation above
+		return true, nil
 	default:
 		return false, ErrUnsupportedAuthMethod
 	}

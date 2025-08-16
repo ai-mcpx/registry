@@ -24,6 +24,10 @@ type Database interface {
 	GetByID(ctx context.Context, id string) (*model.ServerDetail, error)
 	// Publish adds a new ServerDetail to the database
 	Publish(ctx context.Context, serverDetail *model.ServerDetail) error
+	// Update updates an existing ServerDetail in the database
+	Update(ctx context.Context, id string, serverDetail *model.ServerDetail) error
+	// Delete removes a ServerDetail from the database by ID
+	Delete(ctx context.Context, id string) error
 	// ImportSeed imports initial data from a seed file
 	ImportSeed(ctx context.Context, seedFilePath string) error
 	// Close closes the database connection
