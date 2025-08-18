@@ -715,7 +715,7 @@ func TestPublishIntegrationWithComplexPackages(t *testing.T) {
 		require.Len(t, publishedServer.Remotes, 1)
 		assert.Equal(t, "http", publishedServer.Remotes[0].TransportType)
 		assert.Len(t, publishedServer.Remotes[0].Headers, 1)
-		
+
 		// Verify header fields are preserved
 		header := publishedServer.Remotes[0].Headers[0]
 		assert.Equal(t, "API-Version", header.Name, "Header name should be preserved")
