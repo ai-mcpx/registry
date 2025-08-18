@@ -646,26 +646,18 @@ func TestPublishIntegrationWithComplexPackages(t *testing.T) {
 						},
 						EnvironmentVariables: []model.KeyValueInput{
 							{
-								Name: "LOG_LEVEL",
-								InputWithVariables: model.InputWithVariables{
-									Input: model.Input{
-										Description: "Logging level",
-										Format:      model.FormatString,
-										Default:     "info",
-										Choices:     []string{"debug", "info", "warn", "error"},
-									},
-								},
+								Name:        "LOG_LEVEL",
+								Description: "Logging level",
+								Format:      model.FormatString,
+								Default:     "info",
+								Choices:     []string{"debug", "info", "warn", "error"},
 							},
 							{
-								Name: "API_KEY",
-								InputWithVariables: model.InputWithVariables{
-									Input: model.Input{
-										Description: "API key for external service",
-										Format:      model.FormatString,
-										IsRequired:  true,
-										IsSecret:    true,
-									},
-								},
+								Name:        "API_KEY",
+								Description: "API key for external service",
+								Format:      model.FormatString,
+								IsRequired:  true,
+								IsSecret:    true,
 							},
 						},
 					},
@@ -676,14 +668,10 @@ func TestPublishIntegrationWithComplexPackages(t *testing.T) {
 						URL:           "http://localhost:8080/mcp",
 						Headers: []model.KeyValueInput{
 							{
-								Name: "API-Version",
-								InputWithVariables: model.InputWithVariables{
-									Input: model.Input{
-										Description: "API Version Header",
-										Format:      model.FormatString,
-										Value:       "v1",
-									},
-								},
+								Name:        "API-Version",
+								Description: "API Version Header",
+								Format:      model.FormatString,
+								Value:       "v1",
 							},
 						},
 					},
@@ -727,5 +715,11 @@ func TestPublishIntegrationWithComplexPackages(t *testing.T) {
 		require.Len(t, publishedServer.Remotes, 1)
 		assert.Equal(t, "http", publishedServer.Remotes[0].TransportType)
 		assert.Len(t, publishedServer.Remotes[0].Headers, 1)
+		
+		// Verify header fields are preserved
+		header := publishedServer.Remotes[0].Headers[0]
+		assert.Equal(t, "API-Version", header.Name, "Header name should be preserved")
+		assert.Equal(t, "API Version Header", header.Description, "Header description should be preserved")
+		assert.Equal(t, "v1", header.Value, "Header value should be preserved")
 	})
 }
