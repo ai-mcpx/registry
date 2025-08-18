@@ -96,6 +96,7 @@ type Package struct {
 	RegistryName         string          `json:"registry_name" bson:"registry_name"`
 	Name                 string          `json:"name" bson:"name"`
 	Version              string          `json:"version" bson:"version"`
+	WheelURL             string          `json:"wheel_url,omitempty" bson:"wheel_url,omitempty"`
 	RunTimeHint          string          `json:"runtime_hint,omitempty" bson:"runtime_hint,omitempty"`
 	RuntimeArguments     []Argument      `json:"runtime_arguments,omitempty" bson:"runtime_arguments,omitempty"`
 	PackageArguments     []Argument      `json:"package_arguments,omitempty" bson:"package_arguments,omitempty"`
