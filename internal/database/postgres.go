@@ -91,7 +91,7 @@ func (db *PostgreSQL) List(
 
 	// Build JOIN query between servers and server_extensions
 	query := fmt.Sprintf(`
-		SELECT 
+		SELECT
 			s.name, s.description, s.status, s.repository, s.version, s.packages, s.remotes,
 			se.id, se.published_at, se.updated_at, se.is_latest, se.release_date, se.publisher_extensions
 		FROM servers s
@@ -199,7 +199,7 @@ func (db *PostgreSQL) GetByID(ctx context.Context, id string) (*model.ServerReco
 	}
 
 	query := `
-		SELECT 
+		SELECT
 			s.name, s.description, s.status, s.repository, s.version, s.packages, s.remotes,
 			se.id, se.published_at, se.updated_at, se.is_latest, se.release_date, se.publisher_extensions
 		FROM servers s
@@ -291,7 +291,7 @@ func (db *PostgreSQL) Publish(ctx context.Context, serverDetail model.ServerDeta
 	// Check if there's an existing latest version for this server
 	var existingVersion string
 	checkQuery := `
-		SELECT s.version 
+		SELECT s.version
 		FROM servers s
 		JOIN server_extensions se ON s.id = se.server_id
 		WHERE s.name = $1 AND se.is_latest = true
@@ -335,8 +335,8 @@ func (db *PostgreSQL) Publish(ctx context.Context, serverDetail model.ServerDeta
 	// Update existing latest version to not be latest
 	if existingVersion != "" {
 		updateQuery := `
-			UPDATE server_extensions 
-			SET is_latest = false 
+			UPDATE server_extensions
+			SET is_latest = false
 			WHERE server_id IN (
 				SELECT s.id FROM servers s WHERE s.name = $1 AND server_extensions.server_id = s.id
 			)
@@ -485,7 +485,7 @@ func (db *PostgreSQL) publishWithTransaction(ctx context.Context, tx pgx.Tx, ser
 	serverQuery := `
 		INSERT INTO servers (id, name, description, status, repository, version, packages, remotes, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-		ON CONFLICT (name, version) 
+		ON CONFLICT (name, version)
 		DO UPDATE SET
 			description = EXCLUDED.description,
 			status = EXCLUDED.status,
@@ -540,6 +540,147 @@ func (db *PostgreSQL) publishWithTransaction(ctx context.Context, tx pgx.Tx, ser
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert/update server extensions: %w", err)
+	}
+
+	return nil
+}
+
+// Update updates an existing ServerDetail in the database
+func (db *PostgreSQL) Update(ctx context.Context, id string, serverDetail *model.ServerDetail) error {
+	// Start transaction
+	tx, err := db.conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		} else {
+			_ = tx.Commit(ctx)
+		}
+	}()
+
+	// Check if the extension record exists and get the server_id and current version
+	var serverID, existingVersion string
+	checkQuery := `
+		SELECT se.server_id, s.version
+		FROM server_extensions se
+		JOIN servers s ON se.server_id = s.id
+		WHERE se.id = $1`
+	err = tx.QueryRow(ctx, checkQuery, id).Scan(&serverID, &existingVersion)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("failed to check existing record: %w", err)
+	}
+
+	// Validate version if provided
+	if serverDetail.VersionDetail.Version != "" {
+		if compareSemanticVersions(serverDetail.VersionDetail.Version, existingVersion) < 0 {
+			return fmt.Errorf("invalid version: cannot update to an older version")
+		}
+	}
+
+	// Prepare JSON data for server table (same as Publish method)
+	repositoryJSON, err := json.Marshal(serverDetail.Repository)
+	if err != nil {
+		return fmt.Errorf("failed to marshal repository: %w", err)
+	}
+
+	packagesJSON, err := json.Marshal(serverDetail.Packages)
+	if err != nil {
+		return fmt.Errorf("failed to marshal packages: %w", err)
+	}
+
+	remotesJSON, err := json.Marshal(serverDetail.Remotes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal remotes: %w", err)
+	}
+
+	// Update the server record using proper column structure
+	now := time.Now()
+	updateServerQuery := `
+		UPDATE servers
+		SET name = $2, description = $3, status = $4, repository = $5,
+		    version = $6, packages = $7, remotes = $8, updated_at = $9
+		WHERE id = $1`
+
+	_, err = tx.Exec(ctx, updateServerQuery,
+		serverID,
+		serverDetail.Name,
+		serverDetail.Description,
+		serverDetail.Status,
+		repositoryJSON,
+		serverDetail.VersionDetail.Version,
+		packagesJSON,
+		remotesJSON,
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update server: %w", err)
+	}
+
+	// Update server extensions timestamp
+	updateExtensionsQuery := `
+		UPDATE server_extensions
+		SET updated_at = $2
+		WHERE id = $1`
+
+	_, err = tx.Exec(ctx, updateExtensionsQuery, id, now)
+	if err != nil {
+		return fmt.Errorf("failed to update server extensions: %w", err)
+	}
+
+	return nil
+}
+
+// Delete removes a ServerDetail from the database by ID
+func (db *PostgreSQL) Delete(ctx context.Context, id string) error {
+	// Start transaction
+	tx, err := db.conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		} else {
+			_ = tx.Commit(ctx)
+		}
+	}()
+
+	// Check if the record exists and get the server_id
+	var serverID string
+	checkQuery := `SELECT server_id FROM server_extensions WHERE id = $1`
+	err = tx.QueryRow(ctx, checkQuery, id).Scan(&serverID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("failed to get server ID from extension: %w", err)
+	}
+
+	// Delete the extension record
+	_, err = tx.Exec(ctx, `DELETE FROM server_extensions WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete server extension: %w", err)
+	}
+
+	// Check if there are any other extensions for this server
+	var extensionCount int
+	countQuery := `SELECT COUNT(*) FROM server_extensions WHERE server_id = $1`
+	err = tx.QueryRow(ctx, countQuery, serverID).Scan(&extensionCount)
+	if err != nil {
+		return fmt.Errorf("failed to count remaining extensions: %w", err)
+	}
+
+	// If no more extensions exist for this server, delete the server record too
+	if extensionCount == 0 {
+		_, err = tx.Exec(ctx, `DELETE FROM servers WHERE id = $1`, serverID)
+		if err != nil {
+			return fmt.Errorf("failed to delete server: %w", err)
+		}
 	}
 
 	return nil

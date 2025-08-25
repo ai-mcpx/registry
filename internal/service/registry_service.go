@@ -94,3 +94,23 @@ func (s *registryServiceImpl) Publish(req model.PublishRequest) (*model.ServerRe
 	response := serverRecord.ToServerResponse()
 	return &response, nil
 }
+
+// Update updates an existing server
+func (s *registryServiceImpl) Update(id string, serverDetail *model.ServerDetail) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use the database's Update method
+	return s.db.Update(ctx, id, serverDetail)
+}
+
+// Delete removes a server from the registry by ID
+func (s *registryServiceImpl) Delete(id string) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use the database's Delete method
+	return s.db.Delete(ctx, id)
+}

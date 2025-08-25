@@ -96,6 +96,18 @@
           "description": "Package version",
           "example": "1.0.2"
         },
+        "wheel_url": {
+          "type": "string",
+          "description": "URL for Python wheel package",
+          "format": "uri",
+          "example": "http://localhost:80"
+        },
+        "binary_url": {
+          "type": "string",
+          "description": "URL for binary package",
+          "format": "uri",
+          "example": "http://localhost:80"
+        },
         "runtime_hint": {
           "type": "string",
           "description": "A hint to help clients determine the appropriate runtime for the package. This field should be provided when `runtime_arguments` are present.",

@@ -10,4 +10,8 @@ type RegistryService interface {
 	GetByID(id string) (*model.ServerResponse, error)
 	// Publish publishes a server with separated extensions
 	Publish(req model.PublishRequest) (*model.ServerResponse, error)
+	// Update updates an existing server
+	Update(id string, serverDetail *model.ServerDetail) error
+	// Delete removes a server from the registry by ID
+	Delete(id string) error
 }

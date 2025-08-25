@@ -138,6 +138,26 @@ func (s *fakeRegistryService) Publish(req model.PublishRequest) (*model.ServerRe
 	return &response, nil
 }
 
+// Update updates an existing server
+func (s *fakeRegistryService) Update(id string, serverDetail *model.ServerDetail) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use the database's Update method
+	return s.db.Update(ctx, id, serverDetail)
+}
+
+// Delete removes a server from the registry by ID
+func (s *fakeRegistryService) Delete(id string) error {
+	// Create a timeout context for the database operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use the database's Delete method
+	return s.db.Delete(ctx, id)
+}
+
 // Close closes the in-memory database connection
 func (s *fakeRegistryService) Close() error {
 	return s.db.Close()

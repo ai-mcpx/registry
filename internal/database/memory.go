@@ -109,7 +109,7 @@ func (db *MemoryDB) List(
 
 	db.mu.RLock()
 	defer db.mu.RUnlock()
-	
+
 
 	// Convert all entries to a slice for pagination, filter by is_latest
 	var allEntries []*model.ServerRecord
@@ -206,13 +206,13 @@ func (db *MemoryDB) Publish(ctx context.Context, serverDetail model.ServerDetail
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	
+
 	// Extract name and version for validation
 	name := serverDetail.Name
 	if name == "" {
 		return nil, fmt.Errorf("name is required in server JSON")
 	}
-	
+
 	version := serverDetail.VersionDetail.Version
 	if version == "" {
 		return nil, fmt.Errorf("version is required in version_detail")
@@ -276,7 +276,7 @@ func (db *MemoryDB) ImportSeed(ctx context.Context, seedFilePath string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	
+
 	// This will need to be updated to work with the new ServerRecord format
 	// Read seed data using the shared ReadSeedFile function
 	seedData, err := ReadSeedFile(ctx, seedFilePath)
@@ -293,8 +293,49 @@ func (db *MemoryDB) ImportSeed(ctx context.Context, seedFilePath string) error {
 		// Use the registry metadata ID as the map key
 		db.entries[record.RegistryMetadata.ID] = record
 	}
-	
 
+
+	return nil
+}
+
+// Update updates an existing ServerDetail in the database
+func (db *MemoryDB) Update(_ context.Context, id string, serverDetail *model.ServerDetail) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	// Check if the record exists
+	existingRecord, exists := db.entries[id]
+	if !exists {
+		return ErrNotFound
+	}
+
+	// Validate version if provided
+	if serverDetail.VersionDetail.Version != "" {
+		if compareSemanticVersions(serverDetail.VersionDetail.Version, existingRecord.ServerJSON.VersionDetail.Version) < 0 {
+			return fmt.Errorf("invalid version: cannot update to an older version")
+		}
+	}
+
+	// Update the server details
+	now := time.Now()
+	existingRecord.ServerJSON = *serverDetail
+	existingRecord.RegistryMetadata.UpdatedAt = now
+
+	return nil
+}
+
+// Delete removes a ServerDetail from the database by ID
+func (db *MemoryDB) Delete(_ context.Context, id string) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	// Check if the record exists
+	if _, exists := db.entries[id]; !exists {
+		return ErrNotFound
+	}
+
+	// Delete the record
+	delete(db.entries, id)
 	return nil
 }
 

@@ -90,6 +90,8 @@ type Package struct {
 	RegistryName         string          `json:"registry_name" bson:"registry_name"`
 	Name                 string          `json:"name" bson:"name"`
 	Version              string          `json:"version" bson:"version"`
+	WheelURL             string          `json:"wheel_url,omitempty" bson:"wheel_url,omitempty"`
+	BinaryURL            string          `json:"binary_url,omitempty" bson:"binary_url,omitempty"`
 	RunTimeHint          string          `json:"runtime_hint,omitempty" bson:"runtime_hint,omitempty"`
 	RuntimeArguments     []Argument      `json:"runtime_arguments,omitempty" bson:"runtime_arguments,omitempty"`
 	PackageArguments     []Argument      `json:"package_arguments,omitempty" bson:"package_arguments,omitempty"`
@@ -103,9 +105,11 @@ type Remote struct {
 	Headers       []KeyValueInput `json:"headers,omitempty" bson:"headers,omitempty"`
 }
 
-// VersionDetail represents the version details of a server (pure MCP spec, no registry metadata)
+// VersionDetail represents the version details of a server (includes registry metadata for compatibility)
 type VersionDetail struct {
-	Version string `json:"version" bson:"version"`
+	Version     string `json:"version" bson:"version"`
+	ReleaseDate string `json:"release_date,omitempty" bson:"release_date,omitempty"`
+	IsLatest    bool   `json:"is_latest,omitempty" bson:"is_latest,omitempty"`
 }
 
 

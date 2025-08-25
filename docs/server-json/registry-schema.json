@@ -22,7 +22,9 @@
               "npm",
               "pypi",
               "docker",
-              "nuget"
+              "nuget",
+              "wheel",
+              "binary"
             ]
           },
           "runtime_hint": {
@@ -30,7 +32,8 @@
               "npx",
               "uvx",
               "docker",
-              "dnx"
+              "dnx",
+              "binary"
             ]
           }
         }

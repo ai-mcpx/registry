@@ -314,6 +314,74 @@ The `dnx` tool ships with the .NET 10 SDK, starting with Preview 6.
 }
 ```
 
+## Binary Package Example
+
+```json
+{
+  "server": {
+    "name": "io.example/binary-mcp-server",
+    "description": "Native binary MCP server for high-performance operations",
+    "repository": {
+      "url": "https://github.com/example/binary-mcp-server",
+      "source": "github",
+      "id": "binary-example-id-1111-2222-333333333333"
+    },
+    "version_detail": {
+      "version": "2.1.0"
+    },
+    "packages": [
+      {
+        "registry_name": "binary",
+        "name": "binary-mcp-server",
+        "version": "2.1.0",
+        "binary_url": "https://github.com/example/binary-mcp-server/releases/download/v2.1.0/binary-mcp-server-linux-x64",
+        "runtime_hint": "binary",
+        "runtime_arguments": [
+          {
+            "type": "named",
+            "name": "--config",
+            "description": "Path to configuration file",
+            "default": "./config.yaml",
+            "is_required": false
+          },
+          {
+            "type": "named",
+            "name": "--port",
+            "description": "Server port",
+            "default": "8080",
+            "format": "number"
+          }
+        ],
+        "environment_variables": [
+          {
+            "name": "BINARY_LOG_LEVEL",
+            "description": "Logging level (debug, info, warn, error)",
+            "default": "info"
+          },
+          {
+            "name": "BINARY_WORKERS",
+            "description": "Number of worker threads",
+            "default": "4",
+            "format": "number"
+          }
+        ]
+      }
+    ]
+  },
+  "x-publisher": {
+    "tool": "binary-publisher",
+    "version": "1.3.0",
+    "build_info": {
+      "compiler": "go1.21.5",
+      "timestamp": "2023-12-05T14:45:00Z",
+      "target_platform": "linux-x64",
+      "build_flags": "-ldflags='-s -w'",
+      "checksum": "sha256:d4e5f6789012345678901234567890123456789012345678901234567890abcd"
+    }
+  }
+}
+```
+
 ## Complex Docker Server with Multiple Arguments
 
 ```json
